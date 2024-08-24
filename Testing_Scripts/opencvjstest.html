@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenCV.js + YOLOv8 Webcam Example</title>
+    <script async src="https://docs.opencv.org/master/opencv.js" onload="onOpenCvReady();" type="text/javascript"></script>
+</head>
+<body>
+    <video id="videoInput" width="640" height="480" autoplay></video>
+    <canvas id="canvasOutput" width="640" height="480"></canvas>
+
+    <script type="text/javascript">
+        let net;
+        let video;
+        let canvasOutput;
+        let ctxOutput;
+
+        function onOpenCvReady() {
+            // Load YOLOv8 model
+            cv['onRuntimeInitialized'] = () => {
+                // Load YOLOv8 weights and configuration
+                // Replace 'path/to/yolov8.weights' and 'path/to/yolov8.cfg' with actual paths
+                net = cv.readNetFromDarknet('path/to/yolov8.cfg', 'path/to/yolov8.weights');
+
+                // Start webcam stream
+                video = document.getElementById('videoInput');
+                canvasOutput = document.getElementById('canvasOutput');
+                ctxOutput = canvasOutput.getContext('2d');
+
+                navigator.mediaDevices.getUserMedia({ video: true })
+                    .then((stream) => {
+                        video.srcObject = stream;
+                        video.onloadedmetadata = () => {
+                            video.play();
+                            requestAnimationFrame(detectFrame);
+                        };
+                    })
+                    .catch((error) => {
+                        console.error('Error accessing webcam:', error);
+                    });
+            };
+        }
+
+        function detectFrame() {
+            const canvasWidth = canvasOutput.width;
+            const canvasHeight = canvasOutput.height;
+
+            // Draw the video frame onto the canvas
+            ctxOutput.drawImage(video, 0, 0, canvasWidth, canvasHeight);
+
+            // Convert canvas frame to OpenCV Mat
+            const cvImg = cv.imread(canvasOutput);
+
+            // Run YOLOv8 on the frame
+            net.setInput(cv.blobFromImage(cvImg, 1 / 255.0, [416, 416], [0, 0, 0], true, false));
+            const detections = net.forward();
+
+            // Process and draw the detections on the canvas
+            for (let i = 0; i < detections.rows; ++i) {
+                const confidence = detections.at(i, 5);
+                if (confidence > 0.5) {  // Filter out low-confidence detections
+                    const x = detections.at(i, 0) * canvasWidth;
+                    const y = detections.at(i, 1) * canvasHeight;
+                    const width = detections.at(i, 2) * canvasWidth;
+                    const height = detections.at(i, 3) * canvasHeight;
+
+                    // Draw a rectangle around the detected object
+                    ctxOutput.beginPath();
+                    ctxOutput.rect(x - width / 2, y - height / 2, width, height);
+                    ctxOutput.lineWidth = 2;
+                    ctxOutput.strokeStyle = 'red';
+                    ctxOutput.fillStyle = 'red';
+                    ctxOutput.stroke();
+                    ctxOutput.fillText(`Confidence: ${confidence.toFixed(2)}`, x - width / 2, y - height / 2 - 5);
+                }
+            }
+
+            // Clean up
+            cv.imshow(canvasOutput, cvImg);
+            cvImg.delete();
+
+            // Request the next animation frame
+            requestAnimationFrame(detectFrame);
+        }
+    </script>
+</body>
+</html>
